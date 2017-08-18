@@ -184,7 +184,7 @@ class Pelican(object):
                     except TypeError: # output is not a list
                         outputs.append(output)
 
-        signals.all_generators_finalized.send(generators)
+        signals.all_generators_finalized.send(generators, outputs=outputs)
 
         for output in outputs:
             writer.write_output(output, context)

@@ -24,6 +24,7 @@ from pelican.settings import read_settings
 from pelican.utils import (clean_output_dir, file_watcher,
                            folder_watcher, maybe_pluralize)
 from pelican.writers import Writer
+from pelican.outputs import HTMLOutput, FeedOutput
 
 __version__ = "3.7.1"
 DEFAULT_CONFIG_NAME = 'pelicanconf.py'
@@ -170,13 +171,23 @@ class Pelican(object):
             if hasattr(p, 'generate_context'):
                 p.generate_context()
 
-        signals.all_generators_finalized.send(generators)
-
         writer = self.get_writer()
+
+        outputs = []
 
         for p in generators:
             if hasattr(p, 'generate_output'):
-                p.generate_output(writer)
+                output = p.generate_output()
+                if output:
+                    try:
+                        outputs.extend(output)
+                    except TypeError: # output is not a list
+                        outputs.append(output)
+
+        signals.all_generators_finalized.send(generators)
+
+        for output in outputs:
+            writer.write_output(output, context)
 
         signals.finalized.send(self)
 

@@ -15,6 +15,8 @@ from pelican.paginator import Paginator
 from pelican.utils import (get_relative_path, is_selected_for_writing,
                            path_to_url, set_date_tzinfo)
 
+from pelican.outputs import HTMLOutput, FeedOutput
+
 if not six.PY3:
     from codecs import open
 
@@ -228,3 +230,16 @@ class Writer(object):
                 context, name, kwargs, relative_urls)
             _write_file(template, localcontext, self.output_path, name,
                         override_output)
+
+    def write_output(self, output, context):
+        if type(output) == HTMLOutput:
+            self.write_file(output.path, output.template, context,
+                            output.relative_urls, output.paginated,
+                            output.override_output, **output.template_vars)
+        elif type(output) == FeedOutput:
+            self.write_feed(output.elements, context, output.path,
+                            output.feed_type, output.override_output,
+                            output.feed_title)
+
+        if output.send_finalized_signal:
+            output.send_finalized_signal(writer=self)

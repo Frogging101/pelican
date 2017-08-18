@@ -23,7 +23,7 @@ from pelican.readers import Readers
 from pelican.utils import (DateFormatter, copy, copy_file_metadata, mkdir_p,
                            posixize_path, process_translations,
                            python_2_unicode_compatible)
-
+from pelican.outputs import HTMLOutput, FeedOutput
 
 logger = logging.getLogger(__name__)
 
@@ -248,16 +248,19 @@ class _FileLoader(BaseLoader):
 
 class TemplatePagesGenerator(Generator):
 
-    def generate_output(self, writer):
+    def generate_output(self):
+        outputs = []
         for source, dest in self.settings['TEMPLATE_PAGES'].items():
             self.env.loader.loaders.insert(0, _FileLoader(source, self.path))
             try:
                 template = self.env.get_template(source)
                 rurls = self.settings['RELATIVE_URLS']
-                writer.write_file(dest, template, self.context, rurls,
-                                  override_output=True)
+                outputs.append(HTMLOutput(dest, template, rurls,
+                                          override_output=True))
             finally:
                 del self.env.loader.loaders[0]
+
+        return outputs
 
 
 class ArticlesGenerator(CachingGenerator):
@@ -277,16 +280,18 @@ class ArticlesGenerator(CachingGenerator):
         super(ArticlesGenerator, self).__init__(*args, **kwargs)
         signals.article_generator_init.send(self)
 
-    def generate_feeds(self, writer):
+    def generate_feeds(self):
         """Generate the feeds from the current context, and output files."""
 
+        outputs = []
+
         if self.settings.get('FEED_ATOM'):
-            writer.write_feed(self.articles, self.context,
-                              self.settings['FEED_ATOM'])
+            outputs.append(FeedOutput(self.settings['FEED_ATOM'],
+                                      self.articles))
 
         if self.settings.get('FEED_RSS'):
-            writer.write_feed(self.articles, self.context,
-                              self.settings['FEED_RSS'], feed_type='rss')
+            outputs.append(FeedOutput(self.settings['FEED_RSS'], self.articles,
+                                      feed_type='rss'))
 
         if (self.settings.get('FEED_ALL_ATOM') or
                 self.settings.get('FEED_ALL_RSS')):
@@ -296,53 +301,49 @@ class ArticlesGenerator(CachingGenerator):
             all_articles.sort(key=attrgetter('date'), reverse=True)
 
             if self.settings.get('FEED_ALL_ATOM'):
-                writer.write_feed(all_articles, self.context,
-                                  self.settings['FEED_ALL_ATOM'])
+                outputs.append(FeedOutput(self.settings['FEED_ALL_ATOM'], all_articles))
 
             if self.settings.get('FEED_ALL_RSS'):
-                writer.write_feed(all_articles, self.context,
-                                  self.settings['FEED_ALL_RSS'],
-                                  feed_type='rss')
+                outputs.append(FeedOutput(self.settings['FEED_ALL_RSS'],
+                                          all_articles, feed_type='rss'))
 
         for cat, arts in self.categories:
             arts.sort(key=attrgetter('date'), reverse=True)
             if self.settings.get('CATEGORY_FEED_ATOM'):
-                writer.write_feed(arts, self.context,
-                                  self.settings['CATEGORY_FEED_ATOM']
-                                  % cat.slug, feed_title=cat.name)
+                outputs.append(FeedOutput(
+                        self.settings['CATEGORY_FEED_ATOM'] % cat.slug, arts,
+                        feed_title=cat.name))
 
             if self.settings.get('CATEGORY_FEED_RSS'):
-                writer.write_feed(arts, self.context,
-                                  self.settings['CATEGORY_FEED_RSS']
-                                  % cat.slug, feed_title=cat.name,
-                                  feed_type='rss')
+                outputs.append(FeedOutput(
+                        self.settings['CATEGORY_FEED_RSS'] % cat.slug, arts,
+                        feed_title=cat.name, feed_type='rss'))
 
         for auth, arts in self.authors:
             arts.sort(key=attrgetter('date'), reverse=True)
             if self.settings.get('AUTHOR_FEED_ATOM'):
-                writer.write_feed(arts, self.context,
-                                  self.settings['AUTHOR_FEED_ATOM']
-                                  % auth.slug, feed_title=auth.name)
+                outputs.append(FeedOutput(
+                        self.settings['AUTHOR_FEED_ATOM'] % auth.slug, arts,
+                        feed_title=auth.name))
 
             if self.settings.get('AUTHOR_FEED_RSS'):
-                writer.write_feed(arts, self.context,
-                                  self.settings['AUTHOR_FEED_RSS']
-                                  % auth.slug, feed_title=auth.name,
-                                  feed_type='rss')
+                outputs.append(FeedOutput(
+                        self.settings['AUTHOR_FEED_RSS'] % auth.slug, arts,
+                        feed_title=auth.name, feed_type='rss'))
 
         if (self.settings.get('TAG_FEED_ATOM') or
                 self.settings.get('TAG_FEED_RSS')):
             for tag, arts in self.tags.items():
                 arts.sort(key=attrgetter('date'), reverse=True)
                 if self.settings.get('TAG_FEED_ATOM'):
-                    writer.write_feed(arts, self.context,
-                                      self.settings['TAG_FEED_ATOM']
-                                      % tag.slug, feed_title=tag.name)
+                    outputs.append(FeedOutput(
+                            self.settings['TAG_FEED_ATOM'] % tag.slug, arts,
+                            feed_title=tag.name))
 
                 if self.settings.get('TAG_FEED_RSS'):
-                    writer.write_feed(arts, self.context,
-                                      self.settings['TAG_FEED_RSS'] % tag.slug,
-                                      feed_title=tag.name, feed_type='rss')
+                    outputs.append(FeedOutput(
+                            self.settings['TAG_FEED_RSS'] % tag.slug, arts,
+                            feed_title=tag.name, feed_type='rss'))
 
         if (self.settings.get('TRANSLATION_FEED_ATOM') or
                 self.settings.get('TRANSLATION_FEED_RSS')):
@@ -353,25 +354,31 @@ class ArticlesGenerator(CachingGenerator):
             for lang, items in translations_feeds.items():
                 items.sort(key=attrgetter('date'), reverse=True)
                 if self.settings.get('TRANSLATION_FEED_ATOM'):
-                    writer.write_feed(
-                        items, self.context,
-                        self.settings['TRANSLATION_FEED_ATOM'] % lang)
+                    outputs.append(FeedOutput(
+                            self.settings['TRANSLATION_FEED_ATOM'] % lang,
+                            items))
                 if self.settings.get('TRANSLATION_FEED_RSS'):
-                    writer.write_feed(
-                        items, self.context,
-                        self.settings['TRANSLATION_FEED_RSS'] % lang,
-                        feed_type='rss')
+                    outputs.append(FeedOutput(
+                            self.settings['TRANSLATION_FEED_RSS'] % lang,
+                            items, feed_type='rss'))
 
-    def generate_articles(self, write):
+        return outputs
+
+    def generate_articles(self):
         """Generate the articles."""
-        for article in chain(self.translations, self.articles):
-            signals.article_generator_write_article.send(self, content=article)
-            write(article.save_as, self.get_template(article.template),
-                  self.context, article=article, category=article.category,
-                  override_output=hasattr(article, 'override_save_as'),
-                  blog=True)
 
-    def generate_period_archives(self, write):
+        outputs = []
+        for article in chain(self.translations, self.articles):
+            #XXSIGNAL signals.article_generator_write_article.send(self, content=article)
+            outputs.append(HTMLOutput(article.save_as,
+                    self.get_template(article.template), article=article,
+                    category=article.category,
+                    override_output=hasattr(article, 'override_save_as'),
+                    blog=True))
+
+        return outputs
+
+    def generate_period_archives(self):
         """Generate per-year, per-month, and per-day archives."""
         try:
             template = self.get_template('period_archives')
@@ -395,6 +402,7 @@ class ArticlesGenerator(CachingGenerator):
             `key` and written to `save_as`.
             """
             # `dates` is already sorted by date
+            _outputs = []
             for _period, group in groupby(dates, key=key):
                 archive = list(group)
                 # arbitrarily grab the first date so that the usual
@@ -402,34 +410,40 @@ class ArticlesGenerator(CachingGenerator):
                 # period archive dates
                 date = archive[0].date
                 save_as = save_as_fmt.format(date=date)
-                context = self.context.copy()
 
                 if key == period_date_key['year']:
-                    context["period"] = (_period,)
+                    period = (_period,)
                 else:
                     month_name = calendar.month_name[_period[1]]
                     if not six.PY3:
                         month_name = month_name.decode('utf-8')
                     if key == period_date_key['month']:
-                        context["period"] = (_period[0],
-                                             month_name)
+                        period = (_period[0],
+                                  month_name)
                     else:
-                        context["period"] = (_period[0],
-                                             month_name,
-                                             _period[2])
+                        period = (_period[0],
+                                  month_name,
+                                  _period[2])
 
-                write(save_as, template, context,
-                      dates=archive, blog=True)
+                _outputs.append(HTMLOutput(save_as, template, period=period,
+                                           dates=archive, blog=True))
 
+            return _outputs
+
+        outputs = []
         for period in 'year', 'month', 'day':
             save_as = period_save_as[period]
             if save_as:
                 key = period_date_key[period]
-                _generate_period_archives(self.dates, key, save_as)
+                outputs.extend(_generate_period_archives(self.dates, key,
+                                                         save_as))
 
-    def generate_direct_templates(self, write):
+        return outputs
+
+    def generate_direct_templates(self):
         """Generate direct templates pages"""
         PAGINATED_TEMPLATES = self.settings['PAGINATED_DIRECT_TEMPLATES']
+        outputs = []
         for template in self.settings['DIRECT_TEMPLATES']:
             paginated = {}
             if template in PAGINATED_TEMPLATES:
@@ -439,67 +453,88 @@ class ArticlesGenerator(CachingGenerator):
             if not save_as:
                 continue
 
-            write(save_as, self.get_template(template),
-                  self.context, blog=True, paginated=paginated,
-                  page_name=os.path.splitext(save_as)[0])
+            outputs.append(HTMLOutput(save_as, self.get_template(template),
+                                      blog=True, paginated=paginated,
+                                      page_name=os.path.splitext(save_as)[0]))
 
-    def generate_tags(self, write):
+        return outputs
+
+    def generate_tags(self):
         """Generate Tags pages."""
         tag_template = self.get_template('tag')
+        outputs = []
         for tag, articles in self.tags.items():
             articles.sort(key=attrgetter('date'), reverse=True)
             dates = [article for article in self.dates if article in articles]
-            write(tag.save_as, tag_template, self.context, tag=tag,
-                  articles=articles, dates=dates,
-                  paginated={'articles': articles, 'dates': dates}, blog=True,
-                  page_name=tag.page_name, all_articles=self.articles)
+            outputs.append(HTMLOutput(tag.save_as, tag_template, tag=tag,
+                    articles=articles, dates=dates,
+                    paginated={'articles': articles, 'dates': dates},
+                    blog=True,
+                    page_name=tag.page_name,all_articles=self.articles))
 
-    def generate_categories(self, write):
+        return outputs
+
+    def generate_categories(self):
         """Generate category pages."""
         category_template = self.get_template('category')
+        outputs = []
         for cat, articles in self.categories:
             articles.sort(key=attrgetter('date'), reverse=True)
             dates = [article for article in self.dates if article in articles]
-            write(cat.save_as, category_template, self.context,
-                  category=cat, articles=articles, dates=dates,
-                  paginated={'articles': articles, 'dates': dates}, blog=True,
-                  page_name=cat.page_name, all_articles=self.articles)
+            outputs.append(HTMLOutput(cat.save_as, category_template,
+                    category=cat, articles=articles, dates=dates,
+                    paginated={'articles': articles, 'dates': dates},
+                    blog=True, page_name=cat.page_name,
+                    all_articles=self.articles))
 
-    def generate_authors(self, write):
+        return outputs
+
+    def generate_authors(self):
         """Generate Author pages."""
         author_template = self.get_template('author')
+        outputs = []
         for aut, articles in self.authors:
             articles.sort(key=attrgetter('date'), reverse=True)
             dates = [article for article in self.dates if article in articles]
-            write(aut.save_as, author_template, self.context,
-                  author=aut, articles=articles, dates=dates,
-                  paginated={'articles': articles, 'dates': dates}, blog=True,
-                  page_name=aut.page_name, all_articles=self.articles)
+            outputs.append(HTMLOutput(aut.save_as, author_template, author=aut,
+                    articles=articles, dates=dates,
+                    paginated={'articles': articles, 'dates': dates},
+                    blog=True, page_name=aut.page_name,
+                    all_articles=self.articles))
 
-    def generate_drafts(self, write):
+        return outputs
+
+    def generate_drafts(self):
         """Generate drafts pages."""
-        for draft in chain(self.drafts_translations, self.drafts):
-            write(draft.save_as, self.get_template(draft.template),
-                  self.context, article=draft, category=draft.category,
-                  override_output=hasattr(draft, 'override_save_as'),
-                  blog=True, all_articles=self.articles)
 
-    def generate_pages(self, writer):
+        outputs = []
+        for draft in chain(self.drafts_translations, self.drafts):
+            outputs.append(HTMLOutput(draft.save_as,
+                    self.get_template(draft.template),
+                    article=draft, category=draft.category,
+                    override_output=hasattr(draft, 'override_save_as'),
+                    blog=True, all_articles=self.articles))
+
+        return outputs
+
+    def generate_pages(self):
         """Generate the pages on the disk"""
-        write = partial(writer.write_file,
-                        relative_urls=self.settings['RELATIVE_URLS'])
+
+        outputs = []
 
         # to minimize the number of relative path stuff modification
         # in writer, articles pass first
-        self.generate_articles(write)
-        self.generate_period_archives(write)
-        self.generate_direct_templates(write)
+        outputs.extend(self.generate_articles())
+        outputs.extend(self.generate_period_archives())
+        outputs.extend(self.generate_direct_templates())
 
         # and subfolders after that
-        self.generate_tags(write)
-        self.generate_categories(write)
-        self.generate_authors(write)
-        self.generate_drafts(write)
+        outputs.extend(self.generate_tags())
+        outputs.extend(self.generate_categories())
+        outputs.extend(self.generate_authors())
+        outputs.extend(self.generate_drafts())
+
+        return outputs
 
     def generate_context(self):
         """Add the articles into the shared context"""
@@ -595,11 +630,16 @@ class ArticlesGenerator(CachingGenerator):
         self.readers.save_cache()
         signals.article_generator_finalized.send(self)
 
-    def generate_output(self, writer):
-        self.generate_feeds(writer)
-        self.generate_pages(writer)
-        signals.article_writer_finalized.send(self, writer=writer)
+    def generate_output(self):
+        outputs = []
+        outputs.extend(self.generate_feeds())
+        outputs.extend(self.generate_pages())
 
+        for output in outputs:
+            output.send_finalized_signal = partial(
+                signals.article_writer_finalized.send, self)
+
+        return outputs
 
 class PagesGenerator(CachingGenerator):
     """Generate pages"""
@@ -665,15 +705,17 @@ class PagesGenerator(CachingGenerator):
         self.readers.save_cache()
         signals.page_generator_finalized.send(self)
 
-    def generate_output(self, writer):
+    def generate_output(self):
+        outputs = []
         for page in chain(self.translations, self.pages,
                           self.hidden_translations, self.hidden_pages):
-            writer.write_file(
-                page.save_as, self.get_template(page.template),
-                self.context, page=page,
-                relative_urls=self.settings['RELATIVE_URLS'],
-                override_output=hasattr(page, 'override_save_as'))
-        signals.page_writer_finalized.send(self, writer=writer)
+            outputs.append(HTMLOutput(
+                    page.save_as, self.get_template(page.template),
+                    page=page, relative_urls=self.settings['RELATIVE_URLS'],
+                    override_output=hasattr(page, 'override_save_as')))
+            outputs[-1].send_finalized_signal = partial(
+                signals.page_writer_finalized.send, self)
+        return outputs
 
 
 class StaticGenerator(Generator):
@@ -720,7 +762,7 @@ class StaticGenerator(Generator):
         self._update_context(('staticfiles',))
         signals.static_generator_finalized.send(self)
 
-    def generate_output(self, writer):
+    def generate_output(self):
         self._copy_paths(self.settings['THEME_STATIC_PATHS'], self.theme,
                          self.settings['THEME_STATIC_DIR'], self.output_path,
                          os.curdir)
@@ -744,7 +786,7 @@ class SourceFileGenerator(Generator):
                             output_path + self.output_extension)
         copy(obj.source_path, dest)
 
-    def generate_output(self, writer=None):
+    def generate_output(self):
         logger.info('Generating source files...')
         for obj in chain(self.context['articles'], self.context['pages']):
             self._create_source(obj)

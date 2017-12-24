@@ -635,9 +635,8 @@ class ArticlesGenerator(CachingGenerator):
         outputs.extend(self.generate_feeds())
         outputs.extend(self.generate_pages())
 
-        for output in outputs:
-            output.send_finalized_signal = partial(
-                signals.article_writer_finalized.send, self)
+        outputs[-1].send_finalized_signal = \
+            partial(signals.article_writer_finalized.send, self)
 
         return outputs
 
@@ -713,8 +712,8 @@ class PagesGenerator(CachingGenerator):
                     page.save_as, self.get_template(page.template),
                     page=page, relative_urls=self.settings['RELATIVE_URLS'],
                     override_output=hasattr(page, 'override_save_as')))
-            outputs[-1].send_finalized_signal = partial(
-                signals.page_writer_finalized.send, self)
+        outputs[-1].send_finalized_signal = \
+            partial(signals.page_writer_finalized.send, self)
         return outputs
 
 
